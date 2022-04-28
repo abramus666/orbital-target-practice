@@ -270,12 +270,11 @@ class Rock:
       y = self.position[1] / self.position[2]
       r = ROCK_RADIUS / self.position[2]
       # Convert to view coordinates.
-      view_x = int((0.5 + x) * panel.width  + panel.origin_x) # From [-0.5, 0.5] to [0, width].
-      view_y = int((0.5 - y) * panel.height + panel.origin_y) # From [-0.5, 0.5] to [0, height].
-      rx = int(r * panel.width)
-      ry = int(r * panel.height)
+      view_x = int((0.5 + x) * panel.view_scale + panel.view_x)
+      view_y = int((0.5 - y) * panel.view_scale + panel.view_y)
+      view_r = int(r * panel.view_scale)
       # Check if this rock is near enough to be seen.
-      if (rx > 0) and (ry > 0):
+      if view_r > 0:
          # Determine color.
          brightness = 0.75
          r = int(self.color[0] * brightness * 255.0)
@@ -286,13 +285,13 @@ class Rock:
          oval_ix = panel.allocateOvals(1)
          oval_id = panel.oval_pool[oval_ix]
          # Update oval coordinates and color.
-         panel.canvas.coords(oval_id, view_x-rx, view_y-ry, view_x+rx, view_y+ry)
+         panel.canvas.coords(oval_id, view_x-view_r, view_y-view_r, view_x+view_r, view_y+view_r)
          panel.canvas.itemconfig(oval_id, state = 'normal', fill = hex_color)
          panel.canvas.tag_lower(oval_id)
 
    def renderInPanel(self, panel):
       # Level of detail depends on the distance and view panel size.
-      view_radius = max(panel.width, panel.height) / self.position[2]
+      view_radius = panel.view_scale / self.position[2]
       if view_radius < LOD0_THRESHOLD_PX:
          self.renderInPanel_simple(panel)
          return
@@ -328,8 +327,8 @@ class Rock:
          x = vert.camera_x / vert.camera_z
          y = vert.camera_y / vert.camera_z
          # Convert to view coordinates.
-         vert.view_x = int((0.5 + x) * panel.width  + panel.origin_x) # From [-0.5, 0.5] to [0, width].
-         vert.view_y = int((0.5 - y) * panel.height + panel.origin_y) # From [-0.5, 0.5] to [0, height].
+         vert.view_x = int((0.5 + x) * panel.view_scale + panel.view_x)
+         vert.view_y = int((0.5 - y) * panel.view_scale + panel.view_y)
          vert.visible = (
             (vert.view_x > 0) and (vert.view_x < panel.width) and
             (vert.view_y > 0) and (vert.view_y < panel.height))
@@ -465,12 +464,11 @@ class Boom:
             y = sub[1] / sub[2]
             radius /= sub[2]
             # Convert to view coordinates.
-            view_x = int((0.5 + x) * panel.width  + panel.origin_x) # From [-0.5, 0.5] to [0, width].
-            view_y = int((0.5 - y) * panel.height + panel.origin_y) # From [-0.5, 0.5] to [0, height].
-            rx = int(radius * panel.width)
-            ry = int(radius * panel.height)
+            view_x = int((0.5 + x) * panel.view_scale + panel.view_x)
+            view_y = int((0.5 - y) * panel.view_scale + panel.view_y)
+            view_r = int(radius * panel.view_scale)
             # Check if this subelement is near enough to be seen.
-            if (rx > 0) and (ry > 0):
+            if view_r > 0:
                # Determine current color.
                r = int(min(max(3.0 - 3.0 * relative_age, 0.0), 1.0) * 255.0)
                g = int(min(max(2.0 - 3.0 * relative_age, 0.0), 1.0) * 255.0)
@@ -480,7 +478,7 @@ class Boom:
                oval_ix = panel.allocateOvals(1)
                oval_id = panel.oval_pool[oval_ix]
                # Update oval coordinates and color.
-               panel.canvas.coords(oval_id, view_x-rx, view_y-ry, view_x+rx, view_y+ry)
+               panel.canvas.coords(oval_id, view_x-view_r, view_y-view_r, view_x+view_r, view_y+view_r)
                panel.canvas.itemconfig(oval_id, state = 'normal', fill = hex_color)
                panel.canvas.tag_lower(oval_id)
 
@@ -532,8 +530,8 @@ class Beam:
       # Convert to view coordinates.
       for coordinate in self.coordinates:
          x,y = coordinate
-         coordinate[0] = int((0.5 + x) * panel.width  + panel.origin_x) # From [-0.5, 0.5] to [0, width].
-         coordinate[1] = int((0.5 - y) * panel.height + panel.origin_y) # From [-0.5, 0.5] to [0, height].
+         coordinate[0] = int((0.5 + x) * panel.view_scale + panel.view_x)
+         coordinate[1] = int((0.5 - y) * panel.view_scale + panel.view_y)
       # Render strips.
       poly_ix = panel.allocatePolygons(BEAM_STRIP_COUNT)
       for coord_ix in range(BEAM_STRIP_COUNT):
@@ -559,10 +557,6 @@ class Beam:
 class ViewPanel:
 
    def __init__(self, parent, row, column, width, height):
-      self.width = width
-      self.height = height
-      self.origin_x = 0
-      self.origin_y = 0
       # Event related.
       self.mouse_position = [0,0]
       self.mouse_pressed = False
@@ -588,25 +582,47 @@ class ViewPanel:
       self.canvas.bind('<Button-1>', self.mousePressEvent)
       self.canvas.bind_all('<Key-space>', self.startPressEvent)
       # HUD.
-      self.text_top    = self.canvas.create_text(width/2,  10,        anchor = tk.N,      state = 'hidden', font = 'consolas 12', fill = 'white')
-      self.text_center = self.canvas.create_text(width/2,  height/2,  anchor = tk.CENTER, state = 'hidden', font = 'consolas 18', fill = 'white')
-      self.text_sw     = self.canvas.create_text(10,       height-10, anchor = tk.SW,     state = 'hidden', font = 'consolas 12', fill = 'white')
-      self.text_se     = self.canvas.create_text(width-10, height-10, anchor = tk.SE,     state = 'hidden', font = 'consolas 12', fill = 'white')
+      self.text_top    = self.canvas.create_text(0,0, anchor = tk.N,      state = 'hidden', font = 'consolas 12', fill = 'white')
+      self.text_center = self.canvas.create_text(0,0, anchor = tk.CENTER, state = 'hidden', font = 'consolas 18', fill = 'white')
+      self.text_sw     = self.canvas.create_text(0,0, anchor = tk.SW,     state = 'hidden', font = 'consolas 12', fill = 'white')
+      self.text_se     = self.canvas.create_text(0,0, anchor = tk.SE,     state = 'hidden', font = 'consolas 12', fill = 'white')
+      # View.
+      self.setupView(width, height)
 
    #----------------------------------------------------------------------------
+
+   def setupView(self, width, height):
+      self.width = width
+      self.height = height
+      # Prepare parameters for conversion to view coordinates.
+      # X and Y in range [-0.5, 0.5] are always in view,
+      # others may or may not depending on the view ratio.
+      if width > height:
+         self.view_scale = height
+         self.view_origin_x = int((width - height) / 2.0)
+         self.view_origin_y = 0
+      else:
+         self.view_scale = width
+         self.view_origin_x = 0
+         self.view_origin_y = int((height - width) / 2.0)
+      # Need copies for view shaking.
+      self.view_x = self.view_origin_x
+      self.view_y = self.view_origin_y
+      # Update text positions.
+      self.canvas.coords(self.text_top,    width/2,  10)
+      self.canvas.coords(self.text_center, width/2,  height/2)
+      self.canvas.coords(self.text_sw,     10,       height-10)
+      self.canvas.coords(self.text_se,     width-10, height-10)
+
    def resizeEvent(self, event):
-      self.width = event.width
-      self.height = event.height
-      self.canvas.coords(self.text_top,    self.width/2,  10)
-      self.canvas.coords(self.text_center, self.width/2,  self.height/2)
-      self.canvas.coords(self.text_sw,     10,            self.height-10)
-      self.canvas.coords(self.text_se,     self.width-10, self.height-10)
+      self.setupView(event.width, event.height)
 
    def mouseMotionEvent(self, event):
-      x = event.x - self.origin_x
-      y = event.y - self.origin_y
-      self.mouse_position[0] = float(x) / float(self.width) - 0.5  # From [0, width]  to [-0.5, 0.5].
-      self.mouse_position[1] = 0.5 - float(y) / float(self.height) # From [0, height] to [-0.5, 0.5].
+      x = event.x - self.view_x
+      y = event.y - self.view_y
+      # Convert from view coordinates.
+      self.mouse_position[0] = float(x) / float(self.view_scale) - 0.5
+      self.mouse_position[1] = 0.5 - float(y) / float(self.view_scale)
 
    def mousePressEvent(self, event):
       self.mouseMotionEvent(event)
@@ -619,10 +635,10 @@ class ViewPanel:
    def update(self, dt):
       if self.shake_scale > 0:
          self.shake_scale = max(self.shake_scale - (VIEW_SHAKE_SCALE / VIEW_SHAKE_DURATION) * dt, 0)
-         dx = self.shake_scale * self.width
-         dy = self.shake_scale * self.height
-         self.origin_x = random.uniform(-dx, dx)
-         self.origin_y = random.uniform(-dy, dy)
+         dx = self.shake_scale * self.view_scale
+         dy = self.shake_scale * self.view_scale
+         self.view_x = self.view_origin_x + random.uniform(-dx, dx)
+         self.view_y = self.view_origin_y + random.uniform(-dy, dy)
       if self.text_delay > 0:
          self.text_delay -= dt
          if not (self.text_delay > 0):
